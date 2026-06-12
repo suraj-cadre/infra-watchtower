@@ -7,6 +7,7 @@ import {
   RefreshCw,
   Play,
   Pause,
+  Clock,
   CheckCircle2,
   XCircle
 } from 'lucide-react';
@@ -25,16 +26,31 @@ interface HealthResponse {
   results: HealthCheckResult[];
 }
 
+interface DbHistoryLog {
+  id: number;
+  timestamp: string | null;
+  service_name: string;
+  service_type: string;
+  status: string;
+  latency_ms: number | null;
+  message: string | null;
+}
+
 export default function App() {
   const [healthStatus, setHealthStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [healthResult, setHealthResult] = useState<HealthResponse | null>(null);
   const [isHealthLoading, setIsHealthLoading] = useState<boolean>(false);
   const [isAutoPolling, setIsAutoPolling] = useState<boolean>(true);
   
+  // Selection & History states
+  const [selectedServiceName, setSelectedServiceName] = useState<string | null>(null);
+  const [serviceHistory, setServiceHistory] = useState<DbHistoryLog[]>([]);
+  const [isHistoryLoading, setIsHistoryLoading] = useState<boolean>(false);
+
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Trigger full active health checks from backend config
-  const triggerHealthChecks = async () => {
+  // Fetch health states from backend passively
+  const fetchHealthDetails = async () => {
     setIsHealthLoading(true);
     if (!healthResult) {
       setHealthStatus('loading');
@@ -47,6 +63,14 @@ export default function App() {
       const data: HealthResponse = await response.json();
       setHealthResult(data);
       setHealthStatus('success');
+      
+      // Auto-select first service if none selected yet
+      if (data.results && data.results.length > 0 && !selectedServiceName) {
+        setSelectedServiceName(data.results[0].name);
+      } else if (selectedServiceName) {
+        // Refresh currently selected service history
+        fetchServiceHistory(selectedServiceName);
+      }
     } catch (err: any) {
       setHealthStatus('error');
     } finally {
@@ -54,13 +78,38 @@ export default function App() {
     }
   };
 
-  // Setup auto polling
+  // Fetch log history for a specific service name
+  const fetchServiceHistory = async (serviceName: string) => {
+    setIsHistoryLoading(true);
+    try {
+      const response = await fetch(`http://localhost:8000/health/history?service_name=${encodeURIComponent(serviceName)}&limit=15`);
+      if (response.ok) {
+        const data = await response.json();
+        if (Array.isArray(data)) {
+          setServiceHistory(data);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to fetch service history logs", err);
+    } finally {
+      setIsHistoryLoading(false);
+    }
+  };
+
+  // Fetch history when selected service changes
+  useEffect(() => {
+    if (selectedServiceName) {
+      fetchServiceHistory(selectedServiceName);
+    }
+  }, [selectedServiceName]);
+
+  // Setup auto polling for UI updates (fetching details from passive backend)
   useEffect(() => {
     if (isAutoPolling) {
-      triggerHealthChecks();
+      fetchHealthDetails();
       pollIntervalRef.current = setInterval(() => {
-        triggerHealthChecks();
-      }, 5000);
+        fetchHealthDetails();
+      }, 10000); // 10 seconds
     } else {
       if (pollIntervalRef.current) {
         clearInterval(pollIntervalRef.current);
@@ -77,7 +126,7 @@ export default function App() {
   // Initial trigger if auto-poll is off
   useEffect(() => {
     if (!isAutoPolling) {
-      triggerHealthChecks();
+      fetchHealthDetails();
     }
   }, []);
 
@@ -107,7 +156,7 @@ export default function App() {
               Infra Watchtower Console
             </h1>
             <p style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px' }}>
-              Active dependency monitoring and latency status cards
+              Passive dependency health status console (server-side checks)
             </p>
           </div>
         </div>
@@ -115,7 +164,7 @@ export default function App() {
         {/* Actions bar */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <button 
-            onClick={triggerHealthChecks}
+            onClick={fetchHealthDetails}
             disabled={isHealthLoading}
             className="glass-panel"
             style={{ 
@@ -132,7 +181,7 @@ export default function App() {
             }}
           >
             <RefreshCw size={12} style={{ animation: isHealthLoading ? 'spin 1s linear infinite' : 'none' }} />
-            Trigger Checks
+            Refresh
           </button>
 
           <button 
@@ -158,86 +207,184 @@ export default function App() {
         </div>
       </header>
 
-      {/* Grid Dashboard (Exactly one card per service) */}
-      <main style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: '16px', flex: 1 }}>
-        {healthStatus === 'loading' && !healthResult ? (
-          <div style={{ gridColumn: '1 / -1', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '200px', border: '1px dashed var(--border-color)', borderRadius: '6px', color: 'var(--text-muted)', fontSize: '13px' }}>
-            <RefreshCw size={24} style={{ animation: 'spin 1.2s linear infinite', marginBottom: '8px' }} />
-            <span>Loading active service status...</span>
-          </div>
-        ) : healthStatus === 'error' && !healthResult ? (
-          <div style={{ gridColumn: '1 / -1', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '200px', border: '1px dashed var(--border-color)', borderRadius: '6px', color: 'var(--color-error)', fontSize: '13px' }}>
-            <span>Failed to connect to backend server. Make sure the API is running on port 8000.</span>
-            <button onClick={triggerHealthChecks} className="glass-panel" style={{ marginTop: '12px', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', background: '#ffffff', border: '1px solid var(--border-color)' }}>
-              Retry Connection
-            </button>
-          </div>
-        ) : (
-          healthResult?.results.map((service, index) => {
-            const IconComponent = getServiceIcon(service.type);
-            const isHealthy = service.status === 'healthy';
-            return (
-              <section 
-                key={index} 
-                className="glass-panel" 
-                style={{ 
-                  padding: '20px', 
-                  display: 'flex', 
-                  flexDirection: 'column', 
-                  justifyContent: 'space-between', 
-                  minHeight: '200px' 
-                }}
-              >
-                <div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <div style={{ backgroundColor: '#f6f8fa', border: '1px solid var(--border-color)', padding: '6px', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <IconComponent size={18} color="var(--text-primary)" />
+      {/* Main split grid */}
+      <div style={{ display: 'flex', gap: '20px', flex: 1, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+        
+        {/* Left Side: Grid of Service Cards */}
+        <main style={{ flex: '2 1 600px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
+          {healthStatus === 'loading' && !healthResult ? (
+            <div style={{ gridColumn: '1 / -1', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '200px', border: '1px dashed var(--border-color)', borderRadius: '6px', color: 'var(--text-muted)', fontSize: '13px' }}>
+              <RefreshCw size={24} style={{ animation: 'spin 1.2s linear infinite', marginBottom: '8px' }} />
+              <span>Loading service status...</span>
+            </div>
+          ) : healthStatus === 'error' && !healthResult ? (
+            <div style={{ gridColumn: '1 / -1', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '200px', border: '1px dashed var(--border-color)', borderRadius: '6px', color: 'var(--color-error)', fontSize: '13px' }}>
+              <span>Failed to connect to backend server. Make sure the API is running on port 8000.</span>
+              <button onClick={fetchHealthDetails} className="glass-panel" style={{ marginTop: '12px', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', background: '#ffffff', border: '1px solid var(--border-color)' }}>
+                Retry Connection
+              </button>
+            </div>
+          ) : (
+            healthResult?.results.map((service, index) => {
+              const IconComponent = getServiceIcon(service.type);
+              const isHealthy = service.status === 'healthy';
+              const isSelected = selectedServiceName === service.name;
+              
+              return (
+                <section 
+                  key={index} 
+                  className="glass-panel" 
+                  onClick={() => setSelectedServiceName(service.name)}
+                  style={{ 
+                    padding: '20px', 
+                    display: 'flex', 
+                    flexDirection: 'column', 
+                    justifyContent: 'space-between', 
+                    minHeight: '200px',
+                    cursor: 'pointer',
+                    border: isSelected ? '1.5px solid var(--color-primary)' : '1.5px solid var(--border-color)',
+                    boxShadow: isSelected ? '0 0 0 3px var(--color-primary-glow)' : 'none',
+                    transition: 'border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease',
+                    transform: isSelected ? 'scale(1.01)' : 'none'
+                  }}
+                >
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <div style={{ backgroundColor: '#f6f8fa', border: '1px solid var(--border-color)', padding: '6px', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <IconComponent size={18} color="var(--text-primary)" />
+                        </div>
+                        <div>
+                          <h2 style={{ fontSize: '14px', fontWeight: 600, margin: 0 }}>{service.name}</h2>
+                          <span style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{service.type}</span>
+                        </div>
                       </div>
-                      <div>
-                        <h2 style={{ fontSize: '14px', fontWeight: 600, margin: 0 }}>{service.name}</h2>
-                        <span style={{ fontSize: '10px', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{service.type}</span>
-                      </div>
+                      
+                      <span style={{ 
+                        fontSize: '11px', 
+                        fontWeight: 600, 
+                        color: isHealthy ? 'var(--color-success)' : 'var(--color-error)',
+                        backgroundColor: isHealthy ? 'var(--color-success-glow)' : 'var(--color-error-glow)',
+                        padding: '2px 8px',
+                        borderRadius: '12px',
+                        textTransform: 'uppercase',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '4px'
+                      }}>
+                        <span className={`status-indicator ${isHealthy ? 'success' : 'error'}`} style={{ width: '6px', height: '6px' }}></span>
+                        {service.status}
+                      </span>
                     </div>
                     
-                    <span style={{ 
-                      fontSize: '11px', 
-                      fontWeight: 600, 
-                      color: isHealthy ? 'var(--color-success)' : 'var(--color-error)',
-                      backgroundColor: isHealthy ? 'var(--color-success-glow)' : 'var(--color-error-glow)',
-                      padding: '2px 8px',
-                      borderRadius: '12px',
-                      textTransform: 'uppercase',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '4px'
-                    }}>
-                      <span className={`status-indicator ${isHealthy ? 'success' : 'error'}`} style={{ width: '6px', height: '6px' }}></span>
-                      {service.status}
-                    </span>
-                  </div>
-                  
-                  <p style={{ color: 'var(--text-secondary)', fontSize: '13px', lineHeight: 1.4, marginBottom: '16px' }}>
-                    {service.message}
-                  </p>
+                    <p style={{ color: 'var(--text-secondary)', fontSize: '13px', lineHeight: 1.4, marginBottom: '16px' }}>
+                      {service.message}
+                    </p>
 
-                  <div style={{ background: '#f6f8fa', padding: '10px 12px', borderRadius: '6px', border: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                    <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Latency</span>
-                    <span style={{ fontSize: '13px', fontFamily: 'var(--font-mono)', fontWeight: 600, color: 'var(--color-primary)' }}>
-                      {service.latency_ms} ms
-                    </span>
+                    <div style={{ background: '#f6f8fa', padding: '10px 12px', borderRadius: '6px', border: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                      <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Latency</span>
+                      <span style={{ fontSize: '13px', fontFamily: 'var(--font-mono)', fontWeight: 600, color: 'var(--color-primary)' }}>
+                        {service.latency_ms} ms
+                      </span>
+                    </div>
                   </div>
-                </div>
 
-                <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '12px', fontSize: '11px', color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between' }}>
-                  <span>Last check: {new Date(healthResult.timestamp).toLocaleTimeString()}</span>
-                  <span>UTC</span>
-                </div>
-              </section>
-            );
-          })
-        )}
-      </main>
+                  <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '12px', fontSize: '11px', color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between' }}>
+                    <span>Last record: {new Date(healthResult.timestamp).toLocaleTimeString()}</span>
+                    <span style={{ textTransform: 'uppercase' }}>{service.type}</span>
+                  </div>
+                </section>
+              );
+            })
+          )}
+        </main>
+
+        {/* Right Side: Ping History Panel */}
+        <aside 
+          className="glass-panel" 
+          style={{ 
+            flex: '1 1 320px', 
+            padding: '20px', 
+            display: 'flex', 
+            flexDirection: 'column', 
+            minHeight: '300px', 
+            maxHeight: '600px'
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', borderBottom: '1px solid var(--border-color)', paddingBottom: '12px', marginBottom: '16px' }}>
+            <Clock size={16} color="var(--text-secondary)" />
+            <h2 style={{ fontSize: '15px', fontWeight: 600, margin: 0 }}>
+              {selectedServiceName ? `${selectedServiceName} History` : 'Service History'}
+            </h2>
+          </div>
+
+          <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {isHistoryLoading && serviceHistory.length === 0 ? (
+              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100px', color: 'var(--text-muted)', fontSize: '13px' }}>
+                <RefreshCw size={14} style={{ animation: 'spin 1.2s linear infinite', marginRight: '6px' }} />
+                <span>Loading history logs...</span>
+              </div>
+            ) : !selectedServiceName ? (
+              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100px', color: 'var(--text-muted)', fontSize: '13px', border: '1px dashed var(--border-color)', borderRadius: '6px' }}>
+                Select a card to view history
+              </div>
+            ) : serviceHistory.length === 0 ? (
+              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100px', color: 'var(--text-muted)', fontSize: '13px', border: '1px dashed var(--border-color)', borderRadius: '6px' }}>
+                No check logs found for this service
+              </div>
+            ) : (
+              serviceHistory.map((log) => {
+                const isLogHealthy = log.status === 'healthy';
+                return (
+                  <div 
+                    key={log.id} 
+                    style={{ 
+                      display: 'flex', 
+                      flexDirection: 'column', 
+                      gap: '4px', 
+                      padding: '10px 12px', 
+                      borderRadius: '6px', 
+                      background: '#f6f8fa', 
+                      border: '1px solid var(--border-color)', 
+                      fontSize: '12px' 
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ 
+                        fontSize: '10px', 
+                        fontWeight: 600, 
+                        color: isLogHealthy ? 'var(--color-success)' : 'var(--color-error)',
+                        backgroundColor: isLogHealthy ? 'var(--color-success-glow)' : 'var(--color-error-glow)',
+                        padding: '1px 6px',
+                        borderRadius: '10px',
+                        textTransform: 'uppercase',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '3px'
+                      }}>
+                        <span className={`status-indicator ${isLogHealthy ? 'success' : 'error'}`} style={{ width: '4px', height: '4px' }}></span>
+                        {log.status === 'healthy' ? 'OK' : 'FAIL'}
+                      </span>
+                      <span style={{ fontSize: '10px', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>
+                        {log.timestamp ? log.timestamp.split('T')[1].replace('Z','') : ''}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                      <span style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', maxWidth: '200px' }} title={log.message || ''}>
+                        {log.message}
+                      </span>
+                      <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 500 }}>
+                        {log.latency_ms ? `${log.latency_ms}ms` : '—'}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </aside>
+
+      </div>
 
       {/* CSS Keyframes definition */}
       <style>{`

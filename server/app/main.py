@@ -1,13 +1,16 @@
 import time
+import asyncio
 from datetime import datetime
+from contextlib import asynccontextmanager
 import random
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
-from app.database import engine, Base, get_db
+from app.database import engine, Base, get_db, SessionLocal
 from app.models import HealthCheckLog
 from app.health import run_all_checks
+from app.config import settings
 
 # Initialize the database tables on start
 try:
@@ -16,10 +19,36 @@ try:
 except Exception as e:
     print(f"Error initializing database tables: {e}")
 
+async def run_periodic_checks():
+    print("Starting periodic health check background task...")
+    while True:
+        try:
+            db = SessionLocal()
+            run_all_checks(db)
+            print(f"[{datetime.utcnow().isoformat()}] Periodic health checks executed successfully.")
+        except Exception as e:
+            print(f"Error executing periodic checks: {e}")
+        finally:
+            db.close()
+        await asyncio.sleep(60)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    task = asyncio.create_task(run_periodic_checks())
+    yield
+    # Shutdown
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+
 app = FastAPI(
     title="Infra Watchtower API",
     description="Backend monitoring and utility service for Watchtower console",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 # Enable CORS for the React client running on localhost:5173
@@ -66,13 +95,35 @@ def ping():
 @app.get("/health")
 def health(db: Session = Depends(get_db)):
     """
-    Run active health checks on critical system elements (e.g. Redis, MySQL database)
-    and save result logs into the database.
+    Get the latest status of each configured service from database logs.
     """
-    results = run_all_checks(db)
-    
+    results = []
+    services = settings.HEALTH_CHECK_SERVICES
+    for service_key, service_config in services.items():
+        name = service_config.get("name", service_key)
+        service_type = service_config.get("type")
+        
+        # Query latest log for this service name
+        log = db.query(HealthCheckLog).filter(HealthCheckLog.service_name == name).order_by(HealthCheckLog.timestamp.desc()).first()
+        if log:
+            results.append({
+                "name": log.service_name,
+                "type": log.service_type,
+                "status": log.status,
+                "latency_ms": log.latency_ms,
+                "message": log.message
+            })
+        else:
+            results.append({
+                "name": name,
+                "type": service_type,
+                "status": "unknown",
+                "latency_ms": 0.0,
+                "message": "No health check run yet."
+            })
+            
     overall_status = "healthy"
-    if any(res["status"] == "unhealthy" for res in results):
+    if any(res["status"] != "healthy" for res in results):
         overall_status = "degraded"
         
     return {
@@ -82,12 +133,16 @@ def health(db: Session = Depends(get_db)):
     }
 
 @app.get("/health/history")
-def health_history(db: Session = Depends(get_db), limit: int = 30):
+def health_history(db: Session = Depends(get_db), service_name: str = None, limit: int = 30):
     """
-    Query the last N health check records directly from the database log table.
+    Query the last N health check records directly from the database log table,
+    optionally filtered by service_name.
     """
     try:
-        logs = db.query(HealthCheckLog).order_by(HealthCheckLog.timestamp.desc()).limit(limit).all()
+        query = db.query(HealthCheckLog)
+        if service_name:
+            query = query.filter(HealthCheckLog.service_name == service_name)
+        logs = query.order_by(HealthCheckLog.timestamp.desc()).limit(limit).all()
         return [
             {
                 "id": log.id,
