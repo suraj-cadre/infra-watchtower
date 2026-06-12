@@ -230,6 +230,12 @@ export default function App() {
               const isHealthy = service.status === 'healthy';
               const isSelected = selectedServiceName === service.name;
               
+              // Extract Redis metrics if present in the message
+              const match = service.message ? service.message.match(/(.*?)\s*Memory Used:\s*([^,]+),\s*Total Keys:\s*([^\s,]+)/) : null;
+              const displayMessage = match ? match[1].trim() : service.message;
+              const memoryUsed = match && match[2] ? match[2].trim() : null;
+              const totalKeys = match && match[3] ? match[3].trim() : null;
+              
               return (
                 <section 
                   key={index} 
@@ -278,14 +284,32 @@ export default function App() {
                     </div>
                     
                     <p style={{ color: 'var(--text-secondary)', fontSize: '13px', lineHeight: 1.4, marginBottom: '16px' }}>
-                      {service.message}
+                      {displayMessage}
                     </p>
 
-                    <div style={{ background: '#f6f8fa', padding: '10px 12px', borderRadius: '6px', border: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                      <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>Latency</span>
-                      <span style={{ fontSize: '13px', fontFamily: 'var(--font-mono)', fontWeight: 600, color: 'var(--color-primary)' }}>
-                        {service.latency_ms} ms
-                      </span>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(80px, 1fr))', gap: '8px', marginBottom: '12px' }}>
+                      <div style={{ background: '#f6f8fa', padding: '10px 12px', borderRadius: '6px', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                        <span style={{ fontSize: '10px', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.3px' }}>Latency</span>
+                        <span style={{ fontSize: '13px', fontFamily: 'var(--font-mono)', fontWeight: 600, color: 'var(--color-primary)' }}>
+                          {service.latency_ms} ms
+                        </span>
+                      </div>
+                      {memoryUsed && (
+                        <div style={{ background: '#f6f8fa', padding: '10px 12px', borderRadius: '6px', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                          <span style={{ fontSize: '10px', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.3px' }}>Memory</span>
+                          <span style={{ fontSize: '13px', fontFamily: 'var(--font-mono)', fontWeight: 600, color: 'var(--color-primary)' }}>
+                            {memoryUsed}
+                          </span>
+                        </div>
+                      )}
+                      {totalKeys !== null && (
+                        <div style={{ background: '#f6f8fa', padding: '10px 12px', borderRadius: '6px', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                          <span style={{ fontSize: '10px', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.3px' }}>Keys</span>
+                          <span style={{ fontSize: '13px', fontFamily: 'var(--font-mono)', fontWeight: 600, color: 'var(--color-primary)' }}>
+                            {totalKeys}
+                          </span>
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -335,6 +359,13 @@ export default function App() {
             ) : (
               serviceHistory.map((log) => {
                 const isLogHealthy = log.status === 'healthy';
+                
+                // Parse log message metrics if it's a Redis check
+                const logMatch = log.message ? log.message.match(/(.*?)\s*Memory Used:\s*([^,]+),\s*Total Keys:\s*([^\s,]+)/) : null;
+                const displayLogMessage = logMatch ? logMatch[1].trim() : log.message;
+                const logMemory = logMatch && logMatch[2] ? logMatch[2].trim() : null;
+                const logKeys = logMatch && logMatch[3] ? logMatch[3].trim() : null;
+
                 return (
                   <div 
                     key={log.id} 
@@ -370,11 +401,13 @@ export default function App() {
                       </span>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px' }}>
-                      <span style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', maxWidth: '200px' }} title={log.message || ''}>
-                        {log.message}
+                      <span style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', maxWidth: '160px' }} title={log.message || ''}>
+                        {displayLogMessage}
                       </span>
-                      <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 500 }}>
-                        {log.latency_ms ? `${log.latency_ms}ms` : '—'}
+                      <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 500, display: 'flex', gap: '6px' }}>
+                        {logMemory && <span style={{ color: 'var(--color-primary)' }} title={`Memory Used: ${logMemory}`}>M:{logMemory}</span>}
+                        {logKeys && <span style={{ color: 'var(--color-primary)' }} title={`Total Keys: ${logKeys}`}>K:{logKeys}</span>}
+                        <span>{log.latency_ms ? `${log.latency_ms}ms` : '—'}</span>
                       </span>
                     </div>
                   </div>

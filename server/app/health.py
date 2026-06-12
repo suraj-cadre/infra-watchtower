@@ -19,12 +19,21 @@ def check_redis(name: str, credentials: dict) -> dict:
         # Execute ping
         if r.ping():
             latency = (time.perf_counter() - start_time) * 1000
+            try:
+                info_mem = r.info("memory")
+                used_memory_bytes = info_mem.get("used_memory", 0)
+                used_memory_mb = round(used_memory_bytes / (1024 * 1024), 2)
+                used_memory_str = f"{used_memory_mb} MB"
+                total_keys = r.dbsize()
+            except Exception as e:
+                used_memory_str = "N/A"
+                total_keys = "N/A"
             return {
                 "name": name,
                 "type": "redis",
                 "status": "healthy",
                 "latency_ms": round(latency, 2),
-                "message": "Redis connection active and responding to ping."
+                "message": f"Redis connection active. Memory Used: {used_memory_str}, Total Keys: {total_keys}"
             }
         else:
             raise Exception("Ping command did not return True response.")
