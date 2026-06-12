@@ -1,0 +1,148 @@
+@import url('https://fonts.googleapis.com/css2?family=Segoe+UI:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap');
+
+:root {
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+  --font-mono: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
+
+  /* GitHub Light Theme Color Palette */
+  --bg-main: #ffffff;
+  --bg-card: #ffffff;
+  --bg-card-hover: #f6f8fa;
+  --border-color: #d0d7de;
+  --border-hover: #afb8c1;
+
+  --color-primary: #0969da; /* GitHub Link Blue */
+  --color-primary-glow: rgba(9, 105, 218, 0.1);
+  --color-accent: #24292f; /* GitHub Dark Header Black */
+  --color-accent-glow: rgba(36, 41, 47, 0.08);
+
+  --color-success: #1a7f37; /* GitHub Green */
+  --color-success-glow: rgba(26, 127, 55, 0.1);
+  --color-warning: #9a6700; /* GitHub Yellow/Amber */
+  --color-warning-glow: rgba(154, 103, 0, 0.1);
+  --color-error: #cf222e; /* GitHub Red */
+  --color-error-glow: rgba(207, 34, 46, 0.1);
+
+  --text-primary: #1f2328;
+  --text-secondary: #57606a;
+  --text-muted: #8c959f;
+
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background-color: var(--bg-main);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  min-height: 100vh;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+#root {
+  width: 100%;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: #f6f8fa;
+}
+::-webkit-scrollbar-thumb {
+  background: #d0d7de;
+  border-radius: 6px;
+  border: 2px solid #f6f8fa;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #afb8c1;
+}
+
+/* Glassmorphism Classes (Replaced with GitHub Style Panels) */
+.glass-panel {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  box-shadow: 0 1px 3px rgba(31, 35, 40, 0.04);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.glass-panel:hover {
+  border-color: var(--border-hover);
+  background: var(--bg-card);
+}
+
+.glass-input {
+  background: #ffffff;
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  outline: none;
+  box-shadow: inset 0 1px 2px rgba(31, 35, 40, 0.075);
+}
+
+.glass-input:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(9, 105, 218, 0.3);
+}
+
+/* Ping Status Styles */
+.status-indicator {
+  position: relative;
+  display: inline-flex;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.status-indicator.success { background-color: var(--color-success); }
+.status-indicator.warning { background-color: var(--color-warning); }
+.status-indicator.error { background-color: var(--color-error); }
+.status-indicator.idle { background-color: var(--text-muted); }
+
+/* Remove expanding glow rings for GitHub's static/flat style */
+.status-indicator .ping-ring {
+  display: none;
+}
+
+/* Code Display styling */
+pre {
+  background: #f6f8fa;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 16px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.45;
+  overflow-x: auto;
+  color: var(--text-primary);
+}
+
+/* Removed Gradients */
+.gradient-text-indigo-pink {
+  color: var(--text-primary);
+  background: none;
+  -webkit-background-clip: unset;
+  -webkit-text-fill-color: unset;
+}
+
+.gradient-text-emerald-cyan {
+  color: var(--color-success);
+  background: none;
+  -webkit-background-clip: unset;
+  -webkit-text-fill-color: unset;
+}
